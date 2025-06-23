@@ -79,8 +79,8 @@ class DropKAN(nn.Module):
             obtain the symbolic formula of the KAN network
     '''
 
-    def __init__(self, width=None, grid=3, k=3, noise_scale=0.1, scale_base_mu=0.0, scale_base_sigma=1.0, base_fun=torch.nn.SiLU(), symbolic_enabled=True, bias_trainable=False, grid_eps=1.0, grid_range=[-1, 1], sp_trainable=True, sb_trainable=True,
-                 drop_rate=0.0, drop_mode='postact', drop_scale=True, neuron_fun=None, input_preprocessing='ls', device='cpu', seed=0):
+    def __init__(self, width=None, grid=3, k=3, noise_scale=0.1, scale_base_mu=0.0, scale_base_sigma=1.0, base_fun=torch.nn.SiLU(), symbolic_enabled=False, bias_trainable=False, grid_eps=1.0, grid_range=[-1, 1], sp_trainable=True, sb_trainable=True,
+                 drop_rate=0.0, drop_mode='postact', drop_scale=True, neuron_fun='sum', input_preprocessing=None, device='cpu', seed=0):
         '''
         initalize a KAN model
         
@@ -142,13 +142,22 @@ class DropKAN(nn.Module):
         self.depth = len(width) - 1
         self.width = width
 
+        if isinstance(drop_rate, (float, int)):
+            self.drop_rate = [float(drop_rate)] * self.depth
+        elif isinstance(drop_rate, (list, tuple)):
+            if len(drop_rate) != self.depth:
+                raise ValueError(f"Expected drop_rate of length {self.depth}, got {len(drop_rate)}.")
+            return list(map(float, drop_rate))
+        else:
+            raise TypeError("drop_rate must be a float, int, list, or tuple.")
+
         for l in range(self.depth):
             # splines
             #scale_base = 1 / np.sqrt(width[l]) + (torch.randn(width[l] * width[l + 1], ) * 2 - 1) * noise_scale_base
             scale_base = scale_base_mu * 1 / np.sqrt(width[l]) + \
                          scale_base_sigma * (torch.randn(width[l] , width[l + 1], ) * 2 - 1) * 1/np.sqrt(width[l])
             sp_batch = DropKANLayer(in_dim=width[l], out_dim=width[l + 1], num=grid, k=k, noise_scale=noise_scale, scale_base=scale_base, scale_sp=1., base_fun=base_fun, grid_eps=grid_eps, grid_range=grid_range, sp_trainable=sp_trainable,
-                                sb_trainable=sb_trainable, drop_rate=drop_rate[l], drop_mode=drop_mode, drop_scale=drop_scale, neuron_fun=neuron_fun[l], input_preprocessing=input_preprocessing, device=device)
+                                sb_trainable=sb_trainable, drop_rate=self.drop_rate[l], drop_mode=drop_mode, drop_scale=drop_scale, neuron_fun=neuron_fun, input_preprocessing=input_preprocessing, device=device)
             self.act_fun.append(sp_batch)
 
             # bias
@@ -764,7 +773,7 @@ class DropKAN(nn.Module):
         if title != None:
             plt.gcf().get_axes()[0].text(0.5, y0 * (len(self.width) - 1) + 0.2, title, fontsize=40 * scale, horizontalalignment='center', verticalalignment='center')
 
-    def train(self, dataset, opt="LBFGS", steps=100, log=1, lamb=0., lamb_l1=1., lamb_entropy=0., lamb_coef=0., lamb_coefdiff=0., update_grid=True, grid_update_num=10, loss_fn=None, lr=1., stop_grid_update_step=50, batch=-1,
+    def train(self, dataset, opt="LBFGS", steps=100, log=1, lamb=0., lamb_l1=1., lamb_entropy=0., lamb_coef=0., lamb_coefdiff=0., update_grid=False, grid_update_num=10, loss_fn=None, lr=1., stop_grid_update_step=50, batch=-1,
               small_mag_threshold=1e-16, small_reg_factor=1., metrics=None, sglr_avoid=False, save_fig=False, in_vars=None, out_vars=None, beta=3, save_fig_freq=1, img_folder='./video'):
         '''
         training

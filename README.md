@@ -1,48 +1,75 @@
 <img width="1200" alt="dropkan_explained" src="https://github.com/Ghaith81/dropkan/blob/master/DropKAN_explained.JPG">
 
-This is the github repository for the papers: ["DropKAN: Regularizing KANs by masking post-activations"](https://arxiv.org/abs/2407.13044) and ["Rethinking the Function of Neurons in KANs
-"](https://arxiv.org/abs/2407.20667). 
+# Dropout Kolmogorov-Arnold Networks (DropKAN)
 
-# Dropout Kolmogorov-Arnold Networks (DropKAN) 
+This is the GitHub repository for the papers:  
+["DropKAN: Regularizing KANs by masking post-activations"](https://arxiv.org/abs/2407.13044) and  
+["Rethinking the Function of Neurons in KANs"](https://arxiv.org/abs/2407.20667).
+
 DropKAN operates by randomly masking some of the post-activations within the KANs computation graph, while scaling-up the retained post-activations.
 
-## How to use
+---
 
-The DropKAN model can be used similar to KAN to create a model of DropKANLayers. Three parameters are needed with DropKAN:
+## How to use DropKAN
 
-- drop_rate: A list of floats indicating the rates of drop for the DropKAN mask. E.g., for the DropKAN model [6, 10, 1], drop_rate could be [0.1, 0.2], indicating a 0.1 drop_rate for the 6x10 activations between layers 0 and 1, and 0.2 drop_rate for the 10x1 activations between layers 1 and 2.
-- drop_mode:  Accept the following values 'postspline' the drop mask is applied to the layer's postsplines, 'postact' the drop mask is applied to the layer's postacts, 'dropout' applies a standard dropout layer to the inputs, Default: 'postact'.
-- drop_scale: If true, the retained postsplines/postacts are scaled by a factor of 1/(1-drop_rate). Default: True.
+## How to use DropKAN
 
+The DropKAN model can be used similarly to KAN to create a model composed of DropKANLayers. Three main parameters control dropout behavior:
 
-## Citation
+- **drop_rate**: Either a single float or a list of floats specifying drop rates per layer.  
+  - If a single float is provided (e.g., `0.1`), it will be applied uniformly to all layers.  
+  - If a list is provided, its length must match the number of layers minus one (e.g., `[0.1, 0.2]` for a 3-layer model), specifying drop rates for each layer transition.
+
+- **drop_mode**: Drop mask application method. Options include:  
+  - `'postspline'`: Drop mask applied to the layer's postsplines  
+  - `'postact'` (default): Drop mask applied to the layer's postactivations  
+  - `'dropout'`: Standard dropout applied to inputs
+
+- **drop_scale**: Boolean to scale retained activations by `1/(1 - drop_rate)`. Default: `True`.
+---
+
+## Example: Training on the Wine Quality Dataset
+
+We provide an example notebook demonstrating DropKAN and KAN training on the Wine Quality dataset from the UCI repository. Key steps include:
+
+- Loading and splitting the dataset
+- Scaling features with StandardScaler
+- Converting data to PyTorch tensors
+- Training KAN, KAN + Dropout, and DropKAN models with fixed dropout rate (`0.1`)
+- Evaluating models with Mean Absolute Error (MAE)
+- Visualizing performance using box plots comparing test MAE across models
+
 ```python
-@article{altarabichi2024dropkan,
-  title={DropKAN: Regularizing KANs by masking post-activations},
-  author={Altarabichi, Mohammed Ghaith},
-  journal={arXiv preprint arXiv:2407.13044},
-  year={2024}
-}
+# Initialize results DataFrame and training steps
+log_df = pd.DataFrame(columns=['drop_rate', 'mode', 'mae'])
+epochs = 10
+batch = 32
+steps = int(len(X_train) / batch) * epochs
 
-```
-## Contact
-For any questions, please contact: mohammed_ghaith.altarabichi@hh.se
+# Train plain KAN (no dropout)
+for j in range(5):
+    model = DropKAN(seed=j, width=[X_train.shape[1], X_train.shape[1]*2, 1])
+    model.train(dataset, opt="Adam", steps=steps, batch=32, lr=0.01, loss_fn=torch.nn.L1Loss())
+    set_training_mode(model, False)
+    y_pred = model(dataset['test_input']).detach().numpy()
+    mae = mean_absolute_error(y_test, y_pred)
+    log_df.loc[len(log_df)] = [0.0, 'KAN', mae]
 
-# Rethinking the Function of Neurons in KANs
-In this paper, we suggest replacing the summation in KAN neurons with an averaging function. Our experiments show that employing the average function results in more stable training, ensuring that the inputs remain within the effective range of the spline activations. Utilizing the average function clearly aligns with the Kolmogorov-Arnold representation theorem.
+# Train KAN + Dropout and DropKAN with drop_rate=0.2
+drop_rate = 0.2
+for j in range(5):
+    # KAN + Dropout
+    model = DropKAN(seed=j, width=[X_train.shape[1], X_train.shape[1]*2, 1], drop_rate=drop_rate, drop_mode='dropout')
+    model.train(dataset, opt="Adam", steps=steps, batch=32, lr=0.01, loss_fn=torch.nn.L1Loss())
+    set_training_mode(model, False)
+    y_pred = model(dataset['test_input']).detach().numpy()
+    mae = mean_absolute_error(y_test, y_pred)
+    log_df.loc[len(log_df)] = [drop_rate, 'KAN + Dropout', mae]
 
-## How to use
-To change the neuron function, the parameter neuron_fun must be passed to the DropKANLayer with one of the following possible values:
- ['sum', 'min', 'max', 'multiply', 'mean', 'std', 'var', 'median',
- and 'norm'].
-
-## Citation
-```python
-@article{altarabichi2024rethinking,
-  title={Rethinking the Function of Neurons in KANs},
-  author={Altarabichi, Mohammed Ghaith},
-  journal={arXiv preprint arXiv:2407.20667},
-  year={2024}
-}
-
-
+    # DropKAN
+    model = DropKAN(seed=j, width=[X_train.shape[1], X_train.shape[1]*2, 1], drop_rate=drop_rate, drop_mode='postact')
+    model.train(dataset, opt="Adam", steps=steps, batch=32, lr=0.01, loss_fn=torch.nn.L1Loss())
+    set_training_mode(model, False)
+    y_pred = model(dataset['test_input']).detach().numpy()
+    mae = mean_absolute_error(y_test, y_pred)
+    log_df.loc[len(log_df)] = [drop_rate, 'DropKAN', mae]

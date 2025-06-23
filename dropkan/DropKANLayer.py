@@ -64,7 +64,7 @@ class DropKANLayer(nn.Module):
             unlock already locked activation functions
     """
 
-    def __init__(self, in_dim=3, out_dim=2, num=5, k=3, noise_scale=0.1, scale_base=1.0, scale_sp=1.0, base_fun=torch.nn.SiLU(), grid_eps=0.02, grid_range=[-1, 1], sp_trainable=True, sb_trainable=True, save_plot_data = True, device='cpu', sparse_init=False, drop_rate=0.0, drop_mode='postact', drop_scale=True, neuron_fun=None, input_preprocessing='ls'):
+    def __init__(self, in_dim=3, out_dim=2, num=5, k=3, noise_scale=0.1, scale_base=1.0, scale_sp=1.0, base_fun=torch.nn.SiLU(), grid_eps=0.02, grid_range=[-1, 1], sp_trainable=True, sb_trainable=True, save_plot_data = True, device='cpu', sparse_init=False, drop_rate=0.0, drop_mode='postact', drop_scale=True, neuron_fun=None, input_preprocessing=None):
         ''''
         initialize a DropKANLayer
         
@@ -140,7 +140,9 @@ class DropKANLayer(nn.Module):
         self.scale_sp = torch.nn.Parameter(torch.ones(in_dim, out_dim) * scale_sp * mask).requires_grad_(sp_trainable)  # make scale trainable
         self.base_fun = base_fun
 
-        self.mask = torch.nn.Parameter(torch.ones(in_dim, out_dim)).requires_grad_(False)
+        self.mask = torch.nn.Parameter(torch.ones(in_dim, out_dim)).requires_grad_(False),
+
+        #self.register_buffer('mask', None)
         self.grid_eps = grid_eps
         self.drop_rate = drop_rate
         self.drop_mode = drop_mode
@@ -150,7 +152,7 @@ class DropKANLayer(nn.Module):
         self.count = 0
         self.total = 0
         self.input_preprocessing = input_preprocessing
-        
+
         ### remove weight_sharing & lock parts
         #self.weight_sharing = torch.arange(out_dim*in_dim).reshape(out_dim, in_dim)
         #self.lock_counter = 0
@@ -191,7 +193,9 @@ class DropKANLayer(nn.Module):
         batch = x.shape[0]
 
         if self.input_preprocessing == 'ls':
+            #print('before', x)
             x = LayerScaling()(x)
+            #print('after', x)
         elif self.input_preprocessing == 'ln':
             x = nn.LayerNorm(self.in_dim, elementwise_affine=False)(x)
 
@@ -221,9 +225,29 @@ class DropKANLayer(nn.Module):
                     mask = torch.empty(y.shape, device=y.device).bernoulli_(1 - self.drop_rate)
                     y = y * mask
 
+        if self.training and self.drop_mode == 'dropkan' and self.drop_rate > 0:
+            # Decide which input features to drop (same for the whole batch)
+            feature_mask = torch.empty((1, y.shape[1]), device=y.device).bernoulli_(1 - self.drop_rate)
+
+            feature_mask = feature_mask.view(1, 1, -1)  # shape: (1, 1, in_dim)
+
+
+            # Reshape to apply mask on feature dimension
+            feature_mask = feature_mask.permute(0, 2, 1)  # shape becomes [1, 11, 1]
+            feature_mask = feature_mask.repeat(1, 1, y.shape[2])  # shape becomes [1, 11, 2]
+            #print('here')
+            #print(y)
+            #print(feature_mask)
+
+
+            if self.drop_scale:
+                y = y * feature_mask / (1 - self.drop_rate)
+            else:
+                y = y * feature_mask
+
             
         y = self.scale_base[None,:,:] * base[:,:,None] + self.scale_sp[None,:,:] * y
-        y = self.mask[None,:,:] * y
+        #y = self.mask[None,:,:] * y
         
         postacts = y.clone().permute(0,2,1)
 
@@ -234,9 +258,14 @@ class DropKANLayer(nn.Module):
             elif self.drop_mode == 'postact' and self.drop_rate > 0 and not self.drop_scale:
                     mask = torch.empty(y.shape, device=y.device).bernoulli_(1 - self.drop_rate)
                     y = y * mask
-                
+
+        if self.drop_mode == 'postact1' and self.drop_rate > 0:
+                    y = torch.nn.functional.dropout(y, p=self.drop_rate, training=self.training)
+
+
         if self.neuron_fun == 'sum':
                 y = torch.sum(y, dim=1)
+                #print(y.shape)
         elif self.neuron_fun == 'min':
                 y = torch.min(y, dim=1).values  # torch.min returns a tuple (values, indices)
         elif self.neuron_fun == 'max':
@@ -253,6 +282,18 @@ class DropKANLayer(nn.Module):
                 y = torch.median(y, dim=1).values  # torch.median returns a tuple (values, indices)
         elif self.neuron_fun == 'norm':
                 y = torch.norm(y, dim=1)
+        elif self.neuron_fun == 'attention':
+            #print("Before attention:", y.shape)  # [32, 42, 84]
+
+            # Transpose to apply attention across in_dim
+            y = y.transpose(1, 2)  # [32, 84, 42]
+            attn_scores = torch.softmax(y, dim=2)  # [32, 84, 42]
+            print(attn_scores)
+
+            # Weighted sum over dim=2 (i.e., out = sum_i (x_i * attention_i))
+            y = (y * attn_scores).sum(dim=2)  # [32, 84]
+
+            #print("After attention:", y.shape)
         #elif self.neuron_fun == 'any':
         #        y = torch.any(y, dim=1).float()  # Convert boolean result to float
         #elif self.neuron_fun == 'all':
