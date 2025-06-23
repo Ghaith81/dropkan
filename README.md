@@ -1,4 +1,5 @@
-<img width="1200" alt="dropkan_explained" src="https://github.com/Ghaith81/dropkan/DropKAN_explained.JPG">
+<img width="1200" alt="dropkan_explained" src="https://raw.githubusercontent.com/Ghaith81/dropkan/master/DropKAN_explained.JPG
+">
 
 This is the GitHub repository for the papers: ["DropKAN: Regularizing KANs by masking post-activations"](https://arxiv.org/abs/2407.13044) and ["Rethinking the Function of Neurons in KANs"](https://arxiv.org/abs/2407.20667). 
 
