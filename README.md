@@ -16,22 +16,6 @@ The DropKAN model can be used similarly to KAN to create a model of DropKANLayer
 - **drop_mode**: Accepts `'postspline'` (drop mask applied to the layer's postsplines), `'postact'` (drop mask applied to post-activations), `'dropout'` (standard dropout applied to inputs). Default is `'postact'`.
 - **drop_scale**: If `True`, retained activations are scaled by `1/(1-drop_rate)`. Default is `True`.
 
-
-## Citation
-```python
-@article{altarabichi2024rethinking,
-  title={Rethinking the Function of Neurons in KANs},
-  author={Altarabichi, Mohammed Ghaith},
-  journal={arXiv preprint arXiv:2407.20667},
-  year={2024}
-}
-```
-
-## Contact
-If you have any questions, please contact mohammed_ghaith.altarabichi@hh.se
-
-
-
 ## Quick start example
 
 ```python
